@@ -1,8 +1,3 @@
--- ============================================================
--- Portfolio Rebalancing Project — Schema + Data Load
--- Real data: AAPL, MSFT, JNJ, XOM, JPM, KO (Nov 2016 - Nov 2017)
--- ============================================================
-
 CREATE DATABASE IF NOT EXISTS portfolio_sim;
 USE portfolio_sim;
 
@@ -11,9 +6,6 @@ DROP TABLE IF EXISTS daily_prices;
 DROP TABLE IF EXISTS daily_prices_raw;
 DROP TABLE IF EXISTS assets;
 
--- ------------------------------------------------------------
--- 1. Assets table: your target allocation plan
--- ------------------------------------------------------------
 CREATE TABLE assets (
     asset_id INT AUTO_INCREMENT PRIMARY KEY,
     ticker VARCHAR(10) NOT NULL UNIQUE,
@@ -29,14 +21,6 @@ INSERT INTO assets (ticker, sector, target_allocation) VALUES
     ('JPM',  'Finance',         0.15),
     ('KO',   'Consumer Goods',  0.15);
 
--- ------------------------------------------------------------
--- 2. Daily prices: load CSV into a staging table (ticker as
---    text), then translate ticker -> asset_id into the real
---    daily_prices table.
---    NOTE: requires local_infile enabled on both server and
---    client (SET GLOBAL local_infile = 1; + connection option
---    OPT_LOCAL_INFILE=1).
--- ------------------------------------------------------------
 CREATE TABLE daily_prices (
     price_id INT AUTO_INCREMENT PRIMARY KEY,
     asset_id INT NOT NULL,
@@ -52,8 +36,6 @@ CREATE TABLE daily_prices_raw (
     close_price DECIMAL(12,4) NOT NULL
 );
 
--- Update this path to wherever combined_stock_prices.csv is saved.
--- CSV column order is: ticker, price_date, close_price
 LOAD DATA LOCAL INFILE 'C:/Users/DELL/OneDrive/Desktop/hassan/combined_stock_prices.csv'
 INTO TABLE daily_prices_raw
 FIELDS TERMINATED BY ','
@@ -68,13 +50,6 @@ JOIN assets a ON a.ticker = r.ticker;
 
 DROP TABLE daily_prices_raw;
 
--- ------------------------------------------------------------
--- 3. Portfolio holdings: fixed share count per asset,
---    calculated once from day-1 price + target allocation.
---    quantity = (total_value * target_allocation) / day1_price
---    This fixed share count is what causes weight drift later,
---    since price moves but quantity never does.
--- ------------------------------------------------------------
 CREATE TABLE portfolio_holdings (
     holding_id INT AUTO_INCREMENT PRIMARY KEY,
     asset_id INT NOT NULL,
@@ -102,22 +77,11 @@ JOIN (
     )
 ) day1 ON day1.asset_id = dp.asset_id;
 
--- ------------------------------------------------------------
--- Sanity checks
--- ------------------------------------------------------------
 SELECT * FROM assets;
 SELECT COUNT(*) AS total_price_rows FROM daily_prices;
 SELECT COUNT(*) AS total_holding_rows FROM portfolio_holdings;
 SELECT MIN(price_date), MAX(price_date) FROM daily_prices;
 
-
--- ============================================================
--- ANALYSIS QUERIES
--- ============================================================
-
--- ------------------------------------------------------------
--- Query 1: Daily dollar value per asset (warm-up query)
--- ------------------------------------------------------------
 SELECT
     dp.price_date,
     a.ticker,
@@ -130,10 +94,6 @@ JOIN assets a ON a.asset_id = dp.asset_id
 ORDER BY dp.price_date, a.ticker
 LIMIT 20;
 
--- ------------------------------------------------------------
--- Query 2: Drift detection — actual weight vs target weight,
--- every asset, every day
--- ------------------------------------------------------------
 SELECT
     v.price_date,
     v.ticker,
@@ -164,9 +124,6 @@ JOIN (
 ORDER BY v.price_date DESC, v.ticker
 LIMIT 20;
 
--- ------------------------------------------------------------
--- Query 3: Suggested rebalancing trades for the most recent date
--- ------------------------------------------------------------
 SELECT
     v.ticker,
     v.asset_value AS current_value,
